@@ -102,6 +102,8 @@ void run (const juce::String& path)
 int main (int argc, char** argv)
 {
     if (argc < 2) { std::cerr << "usage: mbx_host_check <plugin.vst3>\n"; return 2; }
+    std::setvbuf (stdout, nullptr, _IONBF, 0);
+    std::cout << std::unitbuf;
     juce::ScopedJuceInitialiser_GUI init;
     const juce::String path (argv[1]);
     // The worker finishes the process itself: stopping the Cocoa run loop from a

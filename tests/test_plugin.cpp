@@ -288,6 +288,8 @@ void snapshots (const juce::File& dir)
 
 int main (int argc, char** argv)
 {
+    std::setvbuf (stdout, nullptr, _IONBF, 0); // progress must survive a CI timeout kill
+    std::cout << std::unitbuf;
     juce::ScopedJuceInitialiser_GUI init;
     juce::File snapDir;
     for (int i = 1; i + 1 < argc; ++i)
@@ -295,7 +297,14 @@ int main (int argc, char** argv)
 
     std::thread worker ([&]
     {
-        onMsg ([] { testStateRoundTrip(); testLimiter(); testRealtimeSafety(); testAllPresetsLoadInPlugin(); testCpuTypical(); testStress(); });
+        std::cout << "[worker] started\n";
+        onMsg ([] { std::cout << "[msg-thread] reachable\n"; });
+        onMsg ([] { std::cout << "[test] state round trip\n";   testStateRoundTrip(); });
+        onMsg ([] { std::cout << "[test] limiter\n";            testLimiter(); });
+        onMsg ([] { std::cout << "[test] realtime safety\n";    testRealtimeSafety(); });
+        onMsg ([] { std::cout << "[test] all presets\n";        testAllPresetsLoadInPlugin(); });
+        onMsg ([] { std::cout << "[test] cpu typical\n";        testCpuTypical(); });
+        onMsg ([] { std::cout << "[test] stress\n";             testStress(); });
         if (snapDir != juce::File()) snapshots (snapDir);
         // Exit from here: stopping the Cocoa run loop from a background thread is
         // not reliable on macOS and can leave the process hanging.
