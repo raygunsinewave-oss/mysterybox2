@@ -33,11 +33,6 @@ jobs:
             --target MysteryBoxSynth_VST3 MysteryBoxSynth_AU MysteryBoxSynth_Standalone \
                      mbx_tests mbx_plugin_tests mbx_host_check
 
-      - name: Unit + plugin tests
-        run: |
-          scripts/ci_run.sh "macOS unit tests" ./build/Release/mbx_tests
-          scripts/ci_run.sh "macOS plugin tests" ./build/Release/mbx_plugin_tests
-
       - name: Verify universal binaries
         run: |
           A=build/MysteryBoxSynth_artefacts/Release
@@ -58,6 +53,12 @@ jobs:
         with:
           name: macOS-build-unsigned
           path: macOS-build.zip
+
+      - name: Unit + plugin tests
+        timeout-minutes: 20
+        run: |
+          scripts/ci_run.sh "macOS unit tests" perl -e 'alarm shift; exec @ARGV' 600 ./build/Release/mbx_tests --durations yes
+          scripts/ci_run.sh "macOS plugin tests" perl -e 'alarm shift; exec @ARGV' 600 ./build/Release/mbx_plugin_tests
 
       - name: Code sign + notarize (optional, needs secrets)
         if: env.HAS_APPLE_SIGNING == 'true'
@@ -86,7 +87,8 @@ jobs:
         run: scripts/ci_run.sh "auval" auval -v aumu MbxS Rygn
 
       - name: Host smoke test (built VST3)
-        run: MBX_EDITOR_MS_LIMIT=5000 scripts/ci_run.sh "host check (macOS)" ./build/mbx_host_check_artefacts/Release/mbx_host_check "build/MysteryBoxSynth_artefacts/Release/VST3/$PRODUCT.vst3"
+        timeout-minutes: 15
+        run: MBX_EDITOR_MS_LIMIT=5000 scripts/ci_run.sh "host check (macOS)" perl -e 'alarm shift; exec @ARGV' 600 ./build/mbx_host_check_artefacts/Release/mbx_host_check "build/MysteryBoxSynth_artefacts/Release/VST3/$PRODUCT.vst3"
 
       - name: Installer (.pkg)
         run: scripts/ci_run.sh "pkg installer" installer/macos/build_pkg.sh build/MysteryBoxSynth_artefacts/Release dist/macOS

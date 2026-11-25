@@ -1,3 +1,5 @@
+#include <cstdlib>
+#include <cstdio>
 // Mystery Box Synthesizer by Raygun -- headless plugin-level tests
 //   mbx_plugin_tests                 run state / stress / real-time tests
 //   mbx_plugin_tests --snapshot DIR  also render editor screenshots (needs a display, e.g. Xvfb)
@@ -295,10 +297,13 @@ int main (int argc, char** argv)
     {
         onMsg ([] { testStateRoundTrip(); testLimiter(); testRealtimeSafety(); testAllPresetsLoadInPlugin(); testCpuTypical(); testStress(); });
         if (snapDir != juce::File()) snapshots (snapDir);
-        juce::MessageManager::getInstance()->stopDispatchLoop();
+        // Exit from here: stopping the Cocoa run loop from a background thread is
+        // not reliable on macOS and can leave the process hanging.
+        std::cout << (failures == 0 ? "ALL PLUGIN TESTS PASSED\n" : "PLUGIN TESTS FAILED\n") << std::flush;
+        std::fflush (nullptr);
+        std::_Exit (failures == 0 ? 0 : 1);
     });
     juce::MessageManager::getInstance()->runDispatchLoop();
     worker.join();
-    std::cout << (failures == 0 ? "ALL PLUGIN TESTS PASSED\n" : "PLUGIN TESTS FAILED\n");
-    return failures == 0 ? 0 : 1;
+    return 1; // not reached
 }

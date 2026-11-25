@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <cstdlib>
 // Mystery Box Synthesizer by Raygun
 // Minimal headless VST3 host used to smoke-test the BUILT plugin binary
@@ -103,9 +104,16 @@ int main (int argc, char** argv)
     if (argc < 2) { std::cerr << "usage: mbx_host_check <plugin.vst3>\n"; return 2; }
     juce::ScopedJuceInitialiser_GUI init;
     const juce::String path (argv[1]);
-    std::thread worker ([&] { run (path); juce::MessageManager::getInstance()->stopDispatchLoop(); });
+    // The worker finishes the process itself: stopping the Cocoa run loop from a
+    // background thread is not reliable on macOS and can leave the process hanging.
+    std::thread worker ([&]
+    {
+        run (path);
+        std::cout << (failures == 0 ? "HOST CHECK PASSED\n" : "HOST CHECK FAILED\n") << std::flush;
+        std::fflush (nullptr);
+        std::_Exit (failures == 0 ? 0 : 1);
+    });
     juce::MessageManager::getInstance()->runDispatchLoop();
     worker.join();
-    std::cout << (failures == 0 ? "HOST CHECK PASSED\n" : "HOST CHECK FAILED\n");
-    return failures == 0 ? 0 : 1;
+    return 1; // not reached
 }
