@@ -22,13 +22,15 @@ option(MBX_BUILD_TESTS  "Build Catch2 unit tests" ON)
 option(MBX_BUILD_TOOLS  "Build the preset validator / render tools" ON)
 option(MBX_REGENERATE_PRESETS "Re-run the preset generator + validator at build time" OFF)
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-include(MbxDependencies)
-
+# Static MSVC runtime for everything (incl. fetched JUCE/Catch2): no runtime installs needed.
+# Must be set before the dependencies are added.
 if(MSVC)
     add_compile_options(/MP)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>") # static CRT: no runtime installs needed
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(MbxDependencies)
 
 #------------------------------------------------------------------------------
 # Pure C++ sound engine (no JUCE): shared by the plugin, tests and tools

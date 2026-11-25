@@ -15,7 +15,7 @@ env:
 jobs:
   macos:
     name: macOS (Universal arm64 + x86_64)
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     env:
       HAS_APPLE_SIGNING: ${{ secrets.APPLE_DEVELOPER_ID != '' }}
     steps:
@@ -212,7 +212,7 @@ jobs:
   package:
     name: Assemble release zip
     needs: [ macos, windows, linux ]
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
