@@ -29,7 +29,7 @@ jobs:
 
       - name: Build
         run: |
-          scripts/ci_run.sh "macOS build" cmake --build build --config Release --parallel -- -quiet \
+          scripts/ci_run.sh "macOS build" cmake --build build --config Release --parallel \
             --target MysteryBoxSynth_VST3 MysteryBoxSynth_AU MysteryBoxSynth_Standalone \
                      mbx_tests mbx_plugin_tests mbx_host_check
 
