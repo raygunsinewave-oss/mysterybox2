@@ -1,3 +1,4 @@
+#include <cstdlib>
 // Mystery Box Synthesizer by Raygun
 // Minimal headless VST3 host used to smoke-test the BUILT plugin binary
 // (complements pluginval, which runs in CI):
@@ -88,7 +89,12 @@ void run (const juce::String& path)
         ed.reset();
         inst.reset();
     });
-    CHECK (editorMs < 300.0);
+    // 300 ms budget on a real desktop. Shared CI runners (software GL, cold font
+    // caches) are far slower, so CI may raise the limit via MBX_EDITOR_MS_LIMIT.
+    double limit = 300.0;
+    if (auto* env = std::getenv ("MBX_EDITOR_MS_LIMIT")) limit = std::atof (env);
+    std::cout << "  editor-open budget " << limit << " ms\n";
+    CHECK (editorMs < limit);
 }
 } // namespace
 

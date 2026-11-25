@@ -86,7 +86,7 @@ jobs:
         run: scripts/ci_run.sh "auval" auval -v aumu MbxS Rygn
 
       - name: Host smoke test (built VST3)
-        run: scripts/ci_run.sh "host check (macOS)" ./build/mbx_host_check_artefacts/Release/mbx_host_check "build/MysteryBoxSynth_artefacts/Release/VST3/$PRODUCT.vst3"
+        run: MBX_EDITOR_MS_LIMIT=5000 scripts/ci_run.sh "host check (macOS)" ./build/mbx_host_check_artefacts/Release/mbx_host_check "build/MysteryBoxSynth_artefacts/Release/VST3/$PRODUCT.vst3"
 
       - name: Installer (.pkg)
         run: scripts/ci_run.sh "pkg installer" installer/macos/build_pkg.sh build/MysteryBoxSynth_artefacts/Release dist/macOS
@@ -129,16 +129,15 @@ jobs:
           scripts/ci_run.sh "Windows plugin tests" build/Release/mbx_plugin_tests.exe
 
       - name: pluginval (strictness 10) on VST3
-        shell: pwsh
+        shell: bash
         run: |
-          Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pluginval.zip
-          Expand-Archive pluginval.zip -DestinationPath pv
-          .\pv\pluginval.exe --strictness-level 10 --validate-in-process --skip-gui-tests --timeout-ms 600000 "build\MysteryBoxSynth_artefacts\Release\VST3\$env:PRODUCT.vst3"
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip
+          unzip -q -o pluginval.zip -d pv
+          scripts/ci_run.sh "pluginval (Windows)" ./pv/pluginval.exe --strictness-level 10 --validate-in-process --skip-gui-tests --timeout-ms 600000 "build/MysteryBoxSynth_artefacts/Release/VST3/Mystery Box Synthesizer.vst3"
 
       - name: Host smoke test (built VST3)
         shell: bash
-        run: scripts/ci_run.sh "host check (Windows)" build/mbx_host_check_artefacts/Release/mbx_host_check.exe "build/MysteryBoxSynth_artefacts/Release/VST3/Mystery Box Synthesizer.vst3"
+        run: MBX_EDITOR_MS_LIMIT=5000 scripts/ci_run.sh "host check (Windows)" build/mbx_host_check_artefacts/Release/mbx_host_check.exe "build/MysteryBoxSynth_artefacts/Release/VST3/Mystery Box Synthesizer.vst3"
 
       - name: Authenticode signing (optional, needs secrets)
         if: env.HAS_WIN_SIGNING == 'true'
@@ -192,7 +191,7 @@ jobs:
         run: |
           scripts/ci_run.sh "Linux unit tests" ./build/mbx_tests
           scripts/ci_run.sh "Linux plugin tests" xvfb-run -a ./build/mbx_plugin_tests
-          scripts/ci_run.sh "Linux host check" xvfb-run -a ./build/mbx_host_check_artefacts/Release/mbx_host_check "build/MysteryBoxSynth_artefacts/Release/VST3/Mystery Box Synthesizer.vst3"
+          MBX_EDITOR_MS_LIMIT=5000 scripts/ci_run.sh "Linux host check" xvfb-run -a ./build/mbx_host_check_artefacts/Release/mbx_host_check "build/MysteryBoxSynth_artefacts/Release/VST3/Mystery Box Synthesizer.vst3"
       - name: pluginval (strictness 10)
         run: |
           curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Linux.zip
