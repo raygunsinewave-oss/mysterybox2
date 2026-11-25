@@ -42,6 +42,6 @@ EOF
 
 SIGN=()
 [[ -n "${APPLE_INSTALLER_ID:-}" ]] && SIGN=(--sign "$APPLE_INSTALLER_ID")
-productbuild --distribution "$WORK/distribution.xml" --package-path "$WORK" "${SIGN[@]}" "$OUT/MysteryBoxSynth_Installer.pkg"
+productbuild --distribution "$WORK/distribution.xml" --package-path "$WORK" ${SIGN[@]+"${SIGN[@]}"} "$OUT/MysteryBoxSynth_Installer.pkg"
 rm -rf "$WORK"
 echo "Wrote $OUT/MysteryBoxSynth_Installer.pkg"
