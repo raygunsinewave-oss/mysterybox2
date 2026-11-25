@@ -106,16 +106,10 @@ int main (int argc, char** argv)
     std::cout << std::unitbuf;
     juce::ScopedJuceInitialiser_GUI init;
     const juce::String path (argv[1]);
-    // The worker finishes the process itself: stopping the Cocoa run loop from a
-    // background thread is not reliable on macOS and can leave the process hanging.
-    std::thread worker ([&]
-    {
-        run (path);
-        std::cout << (failures == 0 ? "HOST CHECK PASSED\n" : "HOST CHECK FAILED\n") << std::flush;
-        std::fflush (nullptr);
-        std::_Exit (failures == 0 ? 0 : 1);
-    });
-    juce::MessageManager::getInstance()->runDispatchLoop();
-    worker.join();
-    return 1; // not reached
+    // Runs on the message thread (this thread) directly; a console process's
+    // Cocoa loop on macOS may never service cross-thread calls.
+    run (path);
+    std::cout << (failures == 0 ? "HOST CHECK PASSED\n" : "HOST CHECK FAILED\n") << std::flush;
+    std::fflush (nullptr);
+    std::_Exit (failures == 0 ? 0 : 1);
 }

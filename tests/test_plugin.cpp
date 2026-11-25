@@ -295,24 +295,28 @@ int main (int argc, char** argv)
     for (int i = 1; i + 1 < argc; ++i)
         if (juce::String (argv[i]) == "--snapshot") snapDir = juce::File::getCurrentWorkingDirectory().getChildFile (argv[i + 1]);
 
-    std::thread worker ([&]
+    // Tests run directly on the message thread (this thread). Only the optional
+    // snapshot mode needs a live dispatch loop, so only it uses a worker thread.
+    // (On macOS a console process's Cocoa loop may never service cross-thread
+    // calls, which made the earlier worker-thread design hang in CI.)
+    std::cout << "[test] state round trip\n";   testStateRoundTrip();
+    std::cout << "[test] limiter\n";            testLimiter();
+    std::cout << "[test] realtime safety\n";    testRealtimeSafety();
+    std::cout << "[test] all presets\n";        testAllPresetsLoadInPlugin();
+    std::cout << "[test] cpu typical\n";        testCpuTypical();
+    std::cout << "[test] stress\n";             testStress();
+
+    if (snapDir != juce::File())
     {
-        std::cout << "[worker] started\n";
-        onMsg ([] { std::cout << "[msg-thread] reachable\n"; });
-        onMsg ([] { std::cout << "[test] state round trip\n";   testStateRoundTrip(); });
-        onMsg ([] { std::cout << "[test] limiter\n";            testLimiter(); });
-        onMsg ([] { std::cout << "[test] realtime safety\n";    testRealtimeSafety(); });
-        onMsg ([] { std::cout << "[test] all presets\n";        testAllPresetsLoadInPlugin(); });
-        onMsg ([] { std::cout << "[test] cpu typical\n";        testCpuTypical(); });
-        onMsg ([] { std::cout << "[test] stress\n";             testStress(); });
-        if (snapDir != juce::File()) snapshots (snapDir);
-        // Exit from here: stopping the Cocoa run loop from a background thread is
-        // not reliable on macOS and can leave the process hanging.
-        std::cout << (failures == 0 ? "ALL PLUGIN TESTS PASSED\n" : "PLUGIN TESTS FAILED\n") << std::flush;
-        std::fflush (nullptr);
-        std::_Exit (failures == 0 ? 0 : 1);
-    });
-    juce::MessageManager::getInstance()->runDispatchLoop();
-    worker.join();
-    return 1; // not reached
+        std::thread worker ([&]
+        {
+            snapshots (snapDir);
+            juce::MessageManager::getInstance()->stopDispatchLoop();
+        });
+        juce::MessageManager::getInstance()->runDispatchLoop();
+        worker.join();
+    }
+    std::cout << (failures == 0 ? "ALL PLUGIN TESTS PASSED\n" : "PLUGIN TESTS FAILED\n") << std::flush;
+    std::fflush (nullptr);
+    std::_Exit (failures == 0 ? 0 : 1); // skip static teardown of plugin/GUI singletons
 }
