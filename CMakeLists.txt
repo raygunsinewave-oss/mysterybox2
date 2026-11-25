@@ -43,7 +43,7 @@ add_library(mbx_engine STATIC
 target_include_directories(mbx_engine PUBLIC Source)
 target_compile_features(mbx_engine PUBLIC cxx_std_20)
 if(MSVC)
-    target_compile_options(mbx_engine PRIVATE /O2 /fp:fast /W3)
+    target_compile_options(mbx_engine PRIVATE $<$<CONFIG:Release,RelWithDebInfo>:/O2> /fp:fast /W3)
 else()
     target_compile_options(mbx_engine PRIVATE $<$<CONFIG:Release,RelWithDebInfo>:-O3> -ffast-math -fno-finite-math-only -Wall -Wextra -Wno-unused-parameter)
 endif()

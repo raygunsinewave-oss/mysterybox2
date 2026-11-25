@@ -15,7 +15,7 @@ env:
 jobs:
   macos:
     name: macOS (Universal arm64 + x86_64)
-    runs-on: macos-14
+    runs-on: macos-latest
     env:
       HAS_APPLE_SIGNING: ${{ secrets.APPLE_DEVELOPER_ID != '' }}
     steps:
@@ -23,20 +23,20 @@ jobs:
 
       - name: Configure
         run: |
-          cmake -S . -B build -G Xcode \
+          scripts/ci_run.sh "macOS configure" cmake -S . -B build -G Xcode \
             -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
 
       - name: Build
         run: |
-          cmake --build build --config Release --parallel \
+          scripts/ci_run.sh "macOS build" cmake --build build --config Release --parallel -- -quiet \
             --target MysteryBoxSynth_VST3 MysteryBoxSynth_AU MysteryBoxSynth_Standalone \
                      mbx_tests mbx_plugin_tests mbx_host_check
 
       - name: Unit + plugin tests
         run: |
-          ./build/Release/mbx_tests
-          ./build/Release/mbx_plugin_tests
+          scripts/ci_run.sh "macOS unit tests" ./build/Release/mbx_tests
+          scripts/ci_run.sh "macOS plugin tests" ./build/Release/mbx_plugin_tests
 
       - name: Verify universal binaries
         run: |
@@ -44,6 +44,20 @@ jobs:
           lipo -info "$A/VST3/$PRODUCT.vst3/Contents/MacOS/$PRODUCT"
           lipo -info "$A/AU/$PRODUCT.component/Contents/MacOS/$PRODUCT"
           lipo -info "$A/Standalone/$PRODUCT.app/Contents/MacOS/$PRODUCT"
+
+      - name: Upload macOS build (before validation)
+        run: |
+          A=build/MysteryBoxSynth_artefacts/Release
+          mkdir -p early/macOS
+          ditto "$A/VST3/$PRODUCT.vst3" "early/macOS/$PRODUCT.vst3"
+          ditto "$A/AU/$PRODUCT.component" "early/macOS/$PRODUCT.component"
+          ditto "$A/Standalone/$PRODUCT.app" "early/macOS/$PRODUCT.app"
+          cd early && ditto -c -k --sequesterRsrc --keepParent macOS ../macOS-build.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macOS-build-unsigned
+          path: macOS-build.zip
 
       - name: Code sign + notarize (optional, needs secrets)
         if: env.HAS_APPLE_SIGNING == 'true'
@@ -62,20 +76,20 @@ jobs:
           unzip -q pluginval.zip
           PV=pluginval.app/Contents/MacOS/pluginval
           A=build/MysteryBoxSynth_artefacts/Release
-          $PV --strictness-level 10 --validate-in-process --skip-gui-tests --timeout-ms 600000 "$A/VST3/$PRODUCT.vst3"
+          scripts/ci_run.sh "pluginval VST3 (macOS)" $PV --strictness-level 10 --validate-in-process --skip-gui-tests --timeout-ms 600000 "$A/VST3/$PRODUCT.vst3"
           mkdir -p ~/Library/Audio/Plug-Ins/Components
           cp -R "$A/AU/$PRODUCT.component" ~/Library/Audio/Plug-Ins/Components/
           killall -9 AudioComponentRegistrar || true
-          $PV --strictness-level 10 --validate-in-process --skip-gui-tests --timeout-ms 600000 ~/Library/Audio/Plug-Ins/Components/"$PRODUCT.component"
+          scripts/ci_run.sh "pluginval AU" $PV --strictness-level 10 --validate-in-process --skip-gui-tests --timeout-ms 600000 ~/Library/Audio/Plug-Ins/Components/"$PRODUCT.component"
 
       - name: auval
-        run: auval -v aumu MbxS Rygn
+        run: scripts/ci_run.sh "auval" auval -v aumu MbxS Rygn
 
       - name: Host smoke test (built VST3)
-        run: ./build/mbx_host_check_artefacts/Release/mbx_host_check "build/MysteryBoxSynth_artefacts/Release/VST3/$PRODUCT.vst3"
+        run: scripts/ci_run.sh "host check (macOS)" ./build/mbx_host_check_artefacts/Release/mbx_host_check "build/MysteryBoxSynth_artefacts/Release/VST3/$PRODUCT.vst3"
 
       - name: Installer (.pkg)
-        run: installer/macos/build_pkg.sh build/MysteryBoxSynth_artefacts/Release dist/macOS
+        run: scripts/ci_run.sh "pkg installer" installer/macos/build_pkg.sh build/MysteryBoxSynth_artefacts/Release dist/macOS
 
       - name: Collect
         run: |
@@ -101,15 +115,18 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+        shell: bash
+        run: scripts/ci_run.sh "Windows configure" cmake -S . -B build -A x64
 
       - name: Build
-        run: cmake --build build --config Release --parallel --target MysteryBoxSynth_VST3 MysteryBoxSynth_Standalone mbx_tests mbx_plugin_tests mbx_host_check
+        shell: bash
+        run: scripts/ci_run.sh "Windows build" cmake --build build --config Release --parallel --target MysteryBoxSynth_VST3 MysteryBoxSynth_Standalone mbx_tests mbx_plugin_tests mbx_host_check -- -v:minimal -nologo
 
       - name: Unit + plugin tests
+        shell: bash
         run: |
-          build\Release\mbx_tests.exe
-          build\Release\mbx_plugin_tests.exe
+          scripts/ci_run.sh "Windows unit tests" build/Release/mbx_tests.exe
+          scripts/ci_run.sh "Windows plugin tests" build/Release/mbx_plugin_tests.exe
 
       - name: pluginval (strictness 10) on VST3
         shell: pwsh
@@ -120,7 +137,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Host smoke test (built VST3)
-        run: build\mbx_host_check_artefacts\Release\mbx_host_check.exe "build\MysteryBoxSynth_artefacts\Release\VST3\Mystery Box Synthesizer.vst3"
+        shell: bash
+        run: scripts/ci_run.sh "host check (Windows)" build/mbx_host_check_artefacts/Release/mbx_host_check.exe "build/MysteryBoxSynth_artefacts/Release/VST3/Mystery Box Synthesizer.vst3"
 
       - name: Authenticode signing (optional, needs secrets)
         if: env.HAS_WIN_SIGNING == 'true'
@@ -194,7 +212,7 @@ jobs:
   package:
     name: Assemble release zip
     needs: [ macos, windows, linux ]
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
