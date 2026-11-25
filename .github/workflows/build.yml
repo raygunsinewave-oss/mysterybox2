@@ -19,7 +19,7 @@ jobs:
     env:
       HAS_APPLE_SIGNING: ${{ secrets.APPLE_DEVELOPER_ID != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Configure
         run: |
@@ -112,7 +112,7 @@ jobs:
     env:
       HAS_WIN_SIGNING: ${{ secrets.WIN_CERT_PFX_BASE64 != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Configure
         shell: bash
@@ -178,7 +178,7 @@ jobs:
     name: Linux (x64, bonus)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Dependencies
         run: |
           sudo apt-get update
@@ -190,14 +190,14 @@ jobs:
           cmake --build build
       - name: Tests
         run: |
-          ./build/mbx_tests
-          xvfb-run -a ./build/mbx_plugin_tests
-          xvfb-run -a ./build/mbx_host_check_artefacts/Release/mbx_host_check "build/MysteryBoxSynth_artefacts/Release/VST3/Mystery Box Synthesizer.vst3"
+          scripts/ci_run.sh "Linux unit tests" ./build/mbx_tests
+          scripts/ci_run.sh "Linux plugin tests" xvfb-run -a ./build/mbx_plugin_tests
+          scripts/ci_run.sh "Linux host check" xvfb-run -a ./build/mbx_host_check_artefacts/Release/mbx_host_check "build/MysteryBoxSynth_artefacts/Release/VST3/Mystery Box Synthesizer.vst3"
       - name: pluginval (strictness 10)
         run: |
           curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Linux.zip
           unzip -q pluginval.zip
-          xvfb-run -a ./pluginval --strictness-level 10 --validate-in-process --timeout-ms 600000 "build/MysteryBoxSynth_artefacts/Release/VST3/Mystery Box Synthesizer.vst3"
+          scripts/ci_run.sh "pluginval VST3 (Linux)" xvfb-run -a ./pluginval --strictness-level 10 --validate-in-process --timeout-ms 600000 "build/MysteryBoxSynth_artefacts/Release/VST3/Mystery Box Synthesizer.vst3"
       - name: Collect
         run: |
           mkdir -p dist/Linux
@@ -214,7 +214,7 @@ jobs:
     needs: [ macos, windows, linux ]
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
