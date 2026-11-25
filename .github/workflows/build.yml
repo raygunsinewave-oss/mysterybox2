@@ -1,0 +1,215 @@
+name: Build, test & package
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+  PRODUCT: Mystery Box Synthesizer
+  VERSION: 1.0.0
+
+jobs:
+  macos:
+    name: macOS (Universal arm64 + x86_64)
+    runs-on: macos-14
+    env:
+      HAS_APPLE_SIGNING: ${{ secrets.APPLE_DEVELOPER_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Xcode \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build
+        run: |
+          cmake --build build --config Release --parallel \
+            --target MysteryBoxSynth_VST3 MysteryBoxSynth_AU MysteryBoxSynth_Standalone \
+                     mbx_tests mbx_plugin_tests mbx_host_check
+
+      - name: Unit + plugin tests
+        run: |
+          ./build/Release/mbx_tests
+          ./build/Release/mbx_plugin_tests
+
+      - name: Verify universal binaries
+        run: |
+          A=build/MysteryBoxSynth_artefacts/Release
+          lipo -info "$A/VST3/$PRODUCT.vst3/Contents/MacOS/$PRODUCT"
+          lipo -info "$A/AU/$PRODUCT.component/Contents/MacOS/$PRODUCT"
+          lipo -info "$A/Standalone/$PRODUCT.app/Contents/MacOS/$PRODUCT"
+
+      - name: Code sign + notarize (optional, needs secrets)
+        if: env.HAS_APPLE_SIGNING == 'true'
+        env:
+          APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: scripts/sign_notarize_mac.sh build/MysteryBoxSynth_artefacts/Release
+
+      - name: pluginval (strictness 10) on VST3 + AU
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          unzip -q pluginval.zip
+          PV=pluginval.app/Contents/MacOS/pluginval
+          A=build/MysteryBoxSynth_artefacts/Release
+          $PV --strictness-level 10 --validate-in-process --skip-gui-tests --timeout-ms 600000 "$A/VST3/$PRODUCT.vst3"
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$A/AU/$PRODUCT.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          $PV --strictness-level 10 --validate-in-process --skip-gui-tests --timeout-ms 600000 ~/Library/Audio/Plug-Ins/Components/"$PRODUCT.component"
+
+      - name: auval
+        run: auval -v aumu MbxS Rygn
+
+      - name: Host smoke test (built VST3)
+        run: ./build/mbx_host_check_artefacts/Release/mbx_host_check "build/MysteryBoxSynth_artefacts/Release/VST3/$PRODUCT.vst3"
+
+      - name: Installer (.pkg)
+        run: installer/macos/build_pkg.sh build/MysteryBoxSynth_artefacts/Release dist/macOS
+
+      - name: Collect
+        run: |
+          A=build/MysteryBoxSynth_artefacts/Release
+          mkdir -p dist/macOS
+          ditto "$A/VST3/$PRODUCT.vst3" "dist/macOS/$PRODUCT.vst3"
+          ditto "$A/AU/$PRODUCT.component" "dist/macOS/$PRODUCT.component"
+          ditto "$A/Standalone/$PRODUCT.app" "dist/macOS/$PRODUCT.app"
+          # zip with ditto to preserve bundle structure, symlinks and signatures
+          cd dist && ditto -c -k --sequesterRsrc --keepParent macOS ../macOS.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macOS
+          path: macOS.zip
+
+  windows:
+    name: Windows (x64)
+    runs-on: windows-latest
+    env:
+      HAS_WIN_SIGNING: ${{ secrets.WIN_CERT_PFX_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel --target MysteryBoxSynth_VST3 MysteryBoxSynth_Standalone mbx_tests mbx_plugin_tests mbx_host_check
+
+      - name: Unit + plugin tests
+        run: |
+          build\Release\mbx_tests.exe
+          build\Release\mbx_plugin_tests.exe
+
+      - name: pluginval (strictness 10) on VST3
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pluginval.zip
+          Expand-Archive pluginval.zip -DestinationPath pv
+          .\pv\pluginval.exe --strictness-level 10 --validate-in-process --skip-gui-tests --timeout-ms 600000 "build\MysteryBoxSynth_artefacts\Release\VST3\$env:PRODUCT.vst3"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Host smoke test (built VST3)
+        run: build\mbx_host_check_artefacts\Release\mbx_host_check.exe "build\MysteryBoxSynth_artefacts\Release\VST3\Mystery Box Synthesizer.vst3"
+
+      - name: Authenticode signing (optional, needs secrets)
+        if: env.HAS_WIN_SIGNING == 'true'
+        shell: pwsh
+        env:
+          WIN_CERT_PFX_BASE64: ${{ secrets.WIN_CERT_PFX_BASE64 }}
+          WIN_CERT_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
+        run: |
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:WIN_CERT_PFX_BASE64))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1
+          $files = @("build\MysteryBoxSynth_artefacts\Release\Standalone\$env:PRODUCT.exe",
+                     "build\MysteryBoxSynth_artefacts\Release\VST3\$env:PRODUCT.vst3\Contents\x86_64-win\$env:PRODUCT.vst3")
+          foreach ($f in $files) { & $signtool.FullName sign /f cert.pfx /p $env:WIN_CERT_PASSWORD /fd sha256 /tr http://timestamp.digicert.com /td sha256 "$f" }
+          Remove-Item cert.pfx
+
+      - name: Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DSourceDir="$PWD\build\MysteryBoxSynth_artefacts\Release" /DOutputDir="$PWD\dist\Windows" installer\windows\MysteryBoxSynth.iss
+
+      - name: Collect
+        shell: pwsh
+        run: |
+          $A = "build\MysteryBoxSynth_artefacts\Release"
+          New-Item -ItemType Directory -Force dist\Windows | Out-Null
+          Copy-Item -Recurse "$A\VST3\$env:PRODUCT.vst3" "dist\Windows\$env:PRODUCT.vst3"
+          Copy-Item "$A\Standalone\$env:PRODUCT.exe" "dist\Windows\$env:PRODUCT.exe"
+          Compress-Archive -Path dist\Windows -DestinationPath Windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windows
+          path: Windows.zip
+
+  linux:
+    name: Linux (x64, bonus)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libasound2-dev libx11-dev libxext-dev libxinerama-dev libxrandr-dev \
+            libxcursor-dev libxcomposite-dev libgl1-mesa-dev libfreetype-dev libfontconfig1-dev xvfb
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+      - name: Tests
+        run: |
+          ./build/mbx_tests
+          xvfb-run -a ./build/mbx_plugin_tests
+          xvfb-run -a ./build/mbx_host_check_artefacts/Release/mbx_host_check "build/MysteryBoxSynth_artefacts/Release/VST3/Mystery Box Synthesizer.vst3"
+      - name: pluginval (strictness 10)
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Linux.zip
+          unzip -q pluginval.zip
+          xvfb-run -a ./pluginval --strictness-level 10 --validate-in-process --timeout-ms 600000 "build/MysteryBoxSynth_artefacts/Release/VST3/Mystery Box Synthesizer.vst3"
+      - name: Collect
+        run: |
+          mkdir -p dist/Linux
+          cp -R "build/MysteryBoxSynth_artefacts/Release/VST3/Mystery Box Synthesizer.vst3" dist/Linux/
+          cp "build/MysteryBoxSynth_artefacts/Release/Standalone/Mystery Box Synthesizer" dist/Linux/
+          cd dist && zip -qr ../Linux.zip Linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Linux
+          path: Linux.zip
+
+  package:
+    name: Assemble release zip
+    needs: [ macos, windows, linux ]
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Assemble
+        run: |
+          for p in macOS Windows Linux; do ditto -x -k artifacts/$p/$p.zip staging/; done
+          scripts/package_release.sh staging
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MysteryBoxSynth_by_Raygun_v${{ env.VERSION }}
+          path: MysteryBoxSynth_by_Raygun_v${{ env.VERSION }}.zip
+      - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: MysteryBoxSynth_by_Raygun_v${{ env.VERSION }}.zip

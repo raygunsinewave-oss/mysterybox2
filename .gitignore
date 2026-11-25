@@ -1,0 +1,9 @@
+build*/
+dist/
+*.zip
+.DS_Store
+*.user
+.vs/
+.idea/
+.vscode/
+__pycache__/
